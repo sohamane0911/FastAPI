@@ -1,0 +1,68 @@
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
+
+URL_DATABASE = "postgresql://postgres:Sohaandswap@localhost:5432/quiz_app"
+
+engine = create_engine(URL_DATABASE)
+
+SessionLocal = sessionmaker(autoflush = False, autocommit = False, bind = engine)
+
+Base = declarative_base()
+from fastapi import FastAPI
+from fastapi.params import Depends
+from pydantic import BaseModel
+from typing import List, Annotated
+from database import engine, SessionLocal
+from sqlalchemy.orm import Session
+import models
+
+app = FastAPI()
+models.Base.metadata.create_all(bind = engine)
+
+class ChoiceBase(BaseModel):
+    choice_text: str
+    is_correct: bool
+
+class QuestionBase(BaseModel):
+    question_text: str
+    choices: List[ChoiceBase]
+
+def get_db():
+    db = SessionLocal()
+
+    try:
+        yield db
+
+    finally:
+        db.close()
+
+db_dependency = Annotated[Session, Depends(get_db)]
+
+@app.post("/questions/")
+async def create_questions(question: QuestionBase, db: db_dependency):
+    db_question = models.Questions(question_text = question.question_text)
+    db.add(db_question)
+    db.commit()
+    db.refresh(db_question)
+    for choice in  question.choices:
+        db_choice = models.Choices(choice_text = choice.choice_text, is_correct = choice.is_correct, question_id = db_question.id)
+        db.add(db_choice)
+    db.commit()
+from sqlalchemy import Boolean, column, ForeignKey, Integer, String, PrimaryKeyConstraint, Column
+from database import Base
+from sqlalchemy.engine import default
+
+class Questions(Base):
+    __tablename__ = 'questions'
+
+    id = Column(Integer, primary_key = True, index = True)
+    question_text = Column(String, index=True)
+
+class Choices(Base):
+    __tablename__ = 'choices'
+
+    id = Column(Integer, primary_key = True, index = True)
+    choice_text = Column(String, index=True)
+    is_correct = Column(Boolean, default = False)
+    question_id = Column(Integer, ForeignKey("questions.id"))
