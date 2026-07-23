@@ -1,0 +1,109 @@
+from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Form
+from pydantic import BaseModel
+
+from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator
+from datetime import datetime
+
+from sqlalchemy import Column, String, Text, select, DateTime, ForeignKey, true, func
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker, result
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+import asyncio
+
+DATABASE_URL = "postgresql+asyncpg://postgres:Sohaandswap@localhost:5432/insta"
+
+engine = create_async_engine(DATABASE_URL, echo=True)
+SessionLocal = async_sessionmaker(bind=engine, expire_on_commit=False)
+
+class Base(DeclarativeBase):
+    pass
+
+class PostSchema(BaseModel):
+    id: int
+    caption: str
+    url: str
+    file_type: str
+    file_name: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class PostModel(Base):
+    __tablename__ = "posts"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    caption: Mapped[str] = mapped_column(String(150), nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    file_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    file_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+app = FastAPI()
+
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    async with SessionLocal() as session:
+        yield session
+
+UPLOAD_DIR = "static/uploads"
+os.makedirs(UPLOAD_DIR, exist_ok= True)
+
+@app.post("/upload", response_model= PostSchema)
+async def upload_file(
+    file: UploadFile = File(...),
+    caption: str = Form(""),
+    db: AsyncSession = Depends(get_db)
+):
+
+    file_name = file.filename or "Unnamed file"
+    file_path = os.path.join(UPLOAD_DIR, file_name)
+
+    contents = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(contents)
+
+    post = PostModel(
+        caption = caption,
+        url = file_path,
+        file_type = file.content_type or "Photo",
+        file_name = file_name
+    )
+
+    db.add(post)
+    await db.commit()
+    await db.refresh(post)
+
+    return post
+
+@app.get("/feed")
+async def get_feed(
+        limit: int = 10,
+        offset: int = 0,
+        db: AsyncSession = Depends(get_db)
+):
+
+    result = await db.execute(
+        select(PostModel)
+        .order_by(PostModel.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+
+    post = result.scalars().all()
+    return post
+
+@app.delete("/delete_post", response_model= PostSchema)
+async def delete_photo_by_id(post_id: int, db: AsyncSession = Depends(get_db)):
+    statement = select(PostModel).where(PostModel.id == post_id)
+    result = await db.execute(statement)
+    post = result.scalar_one_or_none()
+
+    if not post:
+        raise HTTPException(status_code= 404, detail= "Post not found")
+
+    await db.delete(post)
+    await db.commit()
+
+    return {"message": f"Photo with post id {post_id} deleted successfully"}
