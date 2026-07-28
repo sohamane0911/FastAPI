@@ -1,16 +1,23 @@
 from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Form
 from pydantic import BaseModel
 
-from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
 from datetime import datetime
 
-from sqlalchemy import Column, String, Text, select, DateTime, ForeignKey, true, func
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker, result
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-import asyncio
+from sqlalchemy import String, Text, select, DateTime, func
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from dotenv import load_dotenv
+from imagekitio import ImageKit
+import os
 
-DATABASE_URL = "postgresql+asyncpg://postgres:Sohaandswap@localhost:5432/insta"
+load_dotenv()
+
+imagekit = ImageKit(
+    private_key=os.getenv("IMAGEKIT_PRIVATE_KEY")
+)
+
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 engine = create_async_engine(DATABASE_URL, echo=True)
 SessionLocal = async_sessionmaker(bind=engine, expire_on_commit=False)
@@ -24,6 +31,7 @@ class PostSchema(BaseModel):
     url: str
     file_type: str
     file_name: str
+    file_id: str
     created_at: datetime
 
     class Config:
@@ -37,6 +45,7 @@ class PostModel(Base):
     url: Mapped[str] = mapped_column(Text, nullable=False)
     file_type: Mapped[str] = mapped_column(String(100), nullable=False)
     file_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    file_id: Mapped[str] = mapped_column(String(200), nullable= False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -58,17 +67,33 @@ async def upload_file(
 ):
 
     file_name = file.filename or "Unnamed file"
-    file_path = os.path.join(UPLOAD_DIR, file_name)
+    file_bytes = await file.read()
 
-    contents = await file.read()
-    with open(file_path, "wb") as f:
-        f.write(contents)
+    content_type = file.content_type
+    if not content_type:
+        content_type = "mp4/video" if file_name.endswith((".mp4", ".mov", ".avi", ".webm")) else "image/jpeg"
+
+    try:
+        upload_response = imagekit.files.upload(
+            file= file_bytes,
+            file_name= file_name,
+            folder= "/insta_posts"
+        )
+
+        file_id = upload_response.file_id
+        image_url = upload_response.url
+
+    except Exception as e:
+        raise HTTPException(status_code= 500, detail= f"Image upload failed: {str(e)}")
+
+    image_url = upload_response.url
 
     post = PostModel(
         caption = caption,
-        url = file_path,
-        file_type = file.content_type or "Photo",
-        file_name = file_name
+        url = image_url,
+        file_type = content_type,
+        file_name = file_name,
+        file_id = file_id
     )
 
     db.add(post)
@@ -94,14 +119,20 @@ async def get_feed(
     post = result.scalars().all()
     return post
 
-@app.delete("/delete_post", response_model= PostSchema)
+@app.delete("/delete_post/{post_id}")
 async def delete_photo_by_id(post_id: int, db: AsyncSession = Depends(get_db)):
     statement = select(PostModel).where(PostModel.id == post_id)
     result = await db.execute(statement)
     post = result.scalar_one_or_none()
 
     if not post:
-        raise HTTPException(status_code= 404, detail= "Post not found")
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    if post.file_id:
+        try:
+            imagekit.files.delete(post.file_id)
+        except Exception as e:
+            print(f"Warning: ImageKit deletion skipped: {str(e)}")
 
     await db.delete(post)
     await db.commit()
