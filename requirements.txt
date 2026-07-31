@@ -9,3 +9,4 @@ python-dotenv
 imagekitio
 pwdlib
 PyJWT
+pwdlib[argon2]
