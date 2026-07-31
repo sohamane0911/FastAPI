@@ -1,9 +1,11 @@
 fastapi
 uvicorn
+pydantic
+email-validator
 sqlalchemy
 asyncpg
 psycopg2-binary
 python-dotenv
 imagekitio
 pwdlib
-jwt
+PyJWT
