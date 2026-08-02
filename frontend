@@ -6,7 +6,7 @@ import urllib.parse
 st.set_page_config(page_title="Simple Social", layout="wide")
 
 # API_URL = "http://localhost:8000"
-API_URL = "https://fastapi-9nfg.onrender.com/"
+API_URL = "https://fastapi-9nfg.onrender.com"
 
 if 'token' not in st.session_state:
     st.session_state.token = None
