@@ -5,8 +5,8 @@ import urllib.parse
 
 st.set_page_config(page_title="Simple Social", layout="wide")
 
-# API_URL = "http://localhost:8000"
-API_URL = "https://fastapi-9nfg.onrender.com"
+# API_URL = "http://127.0.0.1:8000"
+API_URL = "https://fastapi-9nfg.onrender.com".rstrip("/")
 
 if 'token' not in st.session_state:
     st.session_state.token = None
@@ -26,26 +26,35 @@ def login_page():
     tab1, tab2 = st.tabs(["Login", "Sign Up"])
 
     with tab1:
-        # FastAPI's OAuth2PasswordRequestForm expects 'username' and 'password' as Form data
         login_username = st.text_input("Username:")
         login_password = st.text_input("Password:", type="password", key="login_pass")
 
         if st.button("Login", type="primary", use_container_width=True):
             if login_username and login_password:
                 login_data = {"username": login_username, "password": login_password}
-                response = requests.post(f"{API_URL}/login", data=login_data)
 
-                if response.status_code == 200:
-                    st.session_state.token = response.json()["access_token"]
-                    # Get user info from our new /users/me endpoint
-                    user_response = requests.get(f"{API_URL}/users/me", headers=get_headers())
-                    if user_response.status_code == 200:
-                        st.session_state.user = user_response.json()
-                        st.rerun()
+                try:
+                    response = requests.post(f"{API_URL}/login", data=login_data)
+
+                    if response.status_code == 200:
+                        st.session_state.token = response.json()["access_token"]
+                        user_response = requests.get(f"{API_URL}/users/me", headers=get_headers())
+
+                        if user_response.status_code == 200:
+                            st.session_state.user = user_response.json()
+                            st.rerun()
+                        else:
+                            st.error("Failed to fetch user info")
                     else:
-                        st.error("Failed to fetch user info")
-                else:
-                    st.error("Invalid username or password!")
+                        # Safely extract error message
+                        try:
+                            err = response.json().get("detail", "Invalid credentials!")
+                        except Exception:
+                            err = f"Server Error ({response.status_code}): {response.text or 'No response body'}"
+                        st.error(err)
+
+                except requests.exceptions.RequestException as e:
+                    st.error(f"Connection error: {e}")
             else:
                 st.warning("Please enter credentials.")
 
@@ -57,13 +66,23 @@ def login_page():
         if st.button("Sign Up", type="secondary", use_container_width=True):
             if reg_username and reg_email and reg_password:
                 signup_data = {"username": reg_username, "email": reg_email, "password": reg_password}
-                response = requests.post(f"{API_URL}/register", json=signup_data)
 
-                if response.status_code == 200 or response.status_code == 201:
-                    st.success("Account created! You can now Login.")
-                else:
-                    error_detail = response.json().get("detail", "Registration failed")
-                    st.error(f"Registration failed: {error_detail}")
+                try:
+                    response = requests.post(f"{API_URL}/register", json=signup_data)
+
+                    if response.status_code in [200, 201]:
+                        st.success("Account created! You can now Login.")
+                    else:
+                        # SAFE PARSING: Prevent crash when backend returns HTML or non-JSON text
+                        try:
+                            error_detail = response.json().get("detail", "Registration failed")
+                        except Exception:
+                            error_detail = f"Server returned status {response.status_code}: {response.text or 'Empty response'}"
+
+                        st.error(f"Registration failed: {error_detail}")
+
+                except requests.exceptions.RequestException as e:
+                    st.error(f"Connection error: {e}")
             else:
                 st.warning("Please fill out all fields.")
 
