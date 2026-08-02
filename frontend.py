@@ -22,6 +22,7 @@ def get_headers():
 
 def login_page():
     st.title("🚀 Welcome to Simple Social")
+    st.markdown("Hello!! Actually it's safe, but still use your secondary or tertiary mail guys. And I hope you like it")
 
     tab1, tab2 = st.tabs(["Login", "Sign Up"])
 
@@ -131,6 +132,7 @@ def create_transformed_url(original_url, transformation_params, caption=None):
 
 def feed_page():
     st.title("🏠 Feed")
+st.markdown("Welcome guyzz!!! Glad to see you here😊. This is just an alpha phase. So make some posts and check your feed")
 
     response = requests.get(f"{API_URL}/feed", headers=get_headers())
     if response.status_code == 200:
