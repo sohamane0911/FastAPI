@@ -132,7 +132,7 @@ def create_transformed_url(original_url, transformation_params, caption=None):
 
 def feed_page():
     st.title("🏠 Feed")
-st.markdown("Welcome guyzz!!! Glad to see you here😊. This is just an alpha phase. So make some posts and check your feed")
+    st.markdown("Welcome guyzz!!! Glad to see you here😊. This is just an alpha phase. So make some posts and check your feed")
 
     response = requests.get(f"{API_URL}/feed", headers=get_headers())
     if response.status_code == 200:
